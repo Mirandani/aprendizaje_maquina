@@ -1,0 +1,115 @@
+---
+title: "Modelo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 8, fig.height = 5)
+```
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+```
+
+####################
+
+```{r}
+# Descarga de archivos FinTech Customer Life Time Value (LTV) Datase
+data <- read.csv("digital_wallet_ltv_dataset.csv")
+head(data)
+```
+
+Revisr la estructura de datos
+```{r}
+str(data)
+```
+
+Resumen estadístico de datos
+```{r}
+summary(data)
+```
+
+Revision de datos nulos por columna
+```{r}
+colSums(is.na(data))
+```
+
+Revision de la variable objetivo
+```{r}
+# Histograma del LTV
+ggplot(data, aes(x = LTV)) +
+  geom_histogram(bins = 30, fill = "lightblue", alpha = 0.7) +
+  ggtitle("Distribución del Customer Lifetime Value (LTV)") +
+  theme_minimal()
+# BOXPLOT
+ggplot(data, aes(x = "", y = LTV)) +
+  geom_boxplot(fill = "lightblue") +
+  ggtitle("Distribución del Customer Lifetime Value (LTV)") +
+  xlab("") +
+  theme_minimal() +
+   coord_flip()
+ 
+```
+
+
+Revision de variables categoricas
+
+```{r}
+data_long <- data %>%
+  select(Income_Level, Location, Preferred_Payment_Method, App_Usage_Frequency) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Variable",
+               values_to = "Valor")
+
+ggplot(data_long, aes(x = Valor)) +
+  geom_bar(fill = "steelblue") +
+  facet_wrap(~ Variable, scales = "free") +   # una gráfica por variable
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribución de Variables Categóricas")
+```
+NOTA: Las variables categoricas estan balanceadas, sus distribuciones son muy similares.
+
+
+
+
+ANALISIS DE CORRELACIONES
+```{r, fig.width=15, fig.height=12}
+datos_numericos <- data %>%
+  select(Age, Total_Transactions, Avg_Transaction_Value,Max_Transaction_Value, Min_Transaction_Value, Total_Spent, 
+         Active_Days, Last_Transaction_Days_Ago, Loyalty_Points_Earned, Referral_Count, Customer_Satisfaction_Score, Cashback_Received,Support_Tickets_Raised, Issue_Resolution_Time,Customer_Satisfaction_Score, LTV)
+
+# Calcular la matriz de correlación
+matriz_cor <- cor(datos_numericos, use = "complete.obs") # 'use' maneja NAs
+
+# Visualizar la matriz de correlación
+corrplot(
+  matriz_cor, 
+  method = "color",
+  col = colorRampPalette(c("#6DCCFF", "white", "#FF6D6D"))(200),
+  type = "upper",
+  addCoef.col = "black"
+        )
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
