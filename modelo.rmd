@@ -80,8 +80,8 @@ NOTA: Las variables categoricas estan balanceadas, sus distribuciones son muy si
 ANALISIS DE CORRELACIONES
 ```{r, fig.width=15, fig.height=12}
 datos_numericos <- data %>%
-  select(Age, Total_Transactions, Avg_Transaction_Value,Max_Transaction_Value, Min_Transaction_Value, Total_Spent, 
-         Active_Days, Last_Transaction_Days_Ago, Loyalty_Points_Earned, Referral_Count, Customer_Satisfaction_Score, Cashback_Received,Support_Tickets_Raised, Issue_Resolution_Time,Customer_Satisfaction_Score, LTV)
+  select(LTV, Age, Total_Transactions, Avg_Transaction_Value,Max_Transaction_Value, Min_Transaction_Value, Total_Spent,
+         Active_Days, Last_Transaction_Days_Ago, Loyalty_Points_Earned, Referral_Count, Customer_Satisfaction_Score, Cashback_Received,Support_Tickets_Raised, Issue_Resolution_Time, )
 
 # Calcular la matriz de correlación
 matriz_cor <- cor(datos_numericos, use = "complete.obs") # 'use' maneja NAs
@@ -98,18 +98,448 @@ corrplot(
 ```
 
 
+```{r, fig.width=15, fig.height=12}
+# install.packages("PerformanceAnalytics")
+library(PerformanceAnalytics)
+
+subdata <- data %>%
+  select(LTV,  Total_Spent, Age, Total_Transactions, Avg_Transaction_Value, Max_Transaction_Value, Min_Transaction_Value,)
+
+
+chart.Correlation(
+  subdata,
+  histogram = FALSE,
+  method = "pearson"
+)
+
+```
+Análisis de variables (variable objetivo : LTV) vs Variables numéricas: 
+
+Total_Spent                Corr: 1 y su distribución es prácticamene la misma. No la usaremos ya que podemos caer en Data Leakage
+Age                   (OK) Corr: 0.076 parece no tener una relacion clara con la variable objetivo, pero se puede usar para probar
+Total_Transactions    (OK) Corr: 0.65 buena correlacion, parece ser una muy buena variable aunque no muy lineal
+Avg_Transaction_Value (OK) Corr: 0.66 buena correlacion, parece ser una muy buena variable aunque no muy lineal
+Max_Transaction_Value (OK) Corr: 0.54 tiene buena correlacion con la variable objetivo, pero esta altamente correlacionada con la variable avg
+Min_Transaction_Value      Corr: 0.54 tiene buena correlacion con la variable objetivo, pero esta altamente correlacionada con la variable avg
+
+
+```{r, fig.width=15, fig.height=12}
+# install.packages("PerformanceAnalytics")
+library(PerformanceAnalytics)
+
+subdata <- data %>%
+  select(LTV,  Active_Days, Last_Transaction_Days_Ago, Referral_Count, Cashback_Received,) #Support_Tickets_Raised, Issue_Resolution_Time, Loyalty_Points_Earned
+# Customer_Satisfaction_Score
+
+chart.Correlation(
+  subdata,
+  histogram = TRUE,
+  method = "pearson"
+)
+```
+ Active_Days (x)                Corr -0.017   La variable esta distribuida homogenea, no parece generar algun comportamiento en el LTV
+ Last_Transaction_Days_Ago,     Corr -0.0034. baja correlacion
+ Referral_Count,           (OK) Corr -0.023   La variable tiene baja correlacion. es la que tiene mas correlacion en este grupo de variables
+ Cashback_Received,             Corr -0.011.  baja correlacion
+
+```{r, fig.width=15, fig.height=12}
+
+subdata <- data %>%
+  select(LTV,  Support_Tickets_Raised, Issue_Resolution_Time, Loyalty_Points_Earned, Customer_Satisfaction_Score) #
+# 
+
+chart.Correlation(
+  subdata,
+  histogram = TRUE,
+  method = "pearson"
+)
+```
+Support_Tickets_Raised,     Corr: -0.03 baja correlacion 
+Issue_Resolution_Time.      Corr: -0-0012 muy baja correlacion
+Loyalty_Points_Earned,      Corr:  0.0039 muy baja correlacion
+Customer_Satisfaction_Score Corr: 0.015 baja correlacion, variable ordinal, es metrica de percepcion posterior, no de comportamiento
+
+
+
+ANALISIS DE VARIABLES CATEGORICAS
+Income_Level, Location, Preferred_Payment_Method, App_Usage_Frequency
+CON ANOVA revisaremos si el p value es <0.05 para probar si hay una relacion entre grupos de datos
+
 ```{r}
+anova_result <- aov(LTV ~ Income_Level + Location + Preferred_Payment_Method + App_Usage_Frequency,
+                    data = data)
+
+summary(anova_result)
+```
+No parece haber una buena correlacion que nos sugiera usar las variables
 
 
+```{r}
+cor.test(data$Customer_Satisfaction_Score, data$LTV, method = "spearman")
+```
+
+
+## Modelo de regresión lineal (PRUEBA 1 DE MODELO)
+
+Basado en el análisis de correlaciones, usaremos las variables que mostraron mejor relación con LTV:
+- Age (Corr: 0.076)
+- Total_Transactions (Corr: 0.65)
+- Avg_Transaction_Value (Corr: 0.66)
+- Max_Transaction_Value (Corr: 0.54)
+- Referral_Count (Corr: 0.023)
+
+```{r}
+# Seleccionar variables para el modelo
+modelo_data <- data %>%
+  select(LTV, Age, Total_Transactions, Avg_Transaction_Value, 
+         Max_Transaction_Value, Referral_Count)
+
+# Dividir en conjunto de entrenamiento y prueba (80/20)
+set.seed(123)
+indices_train <- sample(1:nrow(modelo_data), size = 0.8 * nrow(modelo_data))
+train_data <- modelo_data[indices_train, ]
+test_data <- modelo_data[-indices_train, ]
+
+# Crear modelo de regresión lineal
+modelo_lm <- lm(LTV ~ Age + Total_Transactions + Avg_Transaction_Value + 
+                  Max_Transaction_Value + Referral_Count, 
+                data = train_data)
+
+# Resumen del modelo
+summary(modelo_lm)
+```
+
+```{r}
+# Realizar predicciones en el conjunto de prueba
+predicciones <- predict(modelo_lm, newdata = test_data)
+
+# Calcular métricas de evaluación
+mse <- mean((test_data$LTV - predicciones)^2)
+rmse <- sqrt(mse)
+mae <- mean(abs(test_data$LTV - predicciones))
+r2 <- cor(test_data$LTV, predicciones)^2
+
+cat("Métricas del modelo:\n")
+cat("RMSE:", round(rmse, 2), "\n")
+cat("MAE:", round(mae, 2), "\n")
+cat("R²:", round(r2, 4), "\n")
+```
+
+```{r}
+# Visualizar predicciones vs valores reales
+ggplot(data.frame(Real = test_data$LTV, Predicho = predicciones), 
+       aes(x = Real, y = Predicho)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Valores Reales vs Predicciones",
+       x = "LTV Real",
+       y = "LTV Predicho") +
+  theme_minimal()
+```
+
+Analisis visual: Se estan prediciendo valores degativos, en los valores mas cercanos a cero parece haber mayor sesgo, el modelo lineal no alcanza a ajustrse al comportamiento curvo de los datos, es buena irdea probar otro modelo no lineal o hacer transformaciones a las variables quizas a una escala logaritmica.
+
+El modelo lineal si parece comportarse bien en rango de valores alto, pero no en bajos, en valores altos si se percibe una linealidad.
+
+
+## prueba 2 - transformar variables con log
+
+Aplicaremos transformación logarítmica a las variables numéricas para linealizar las relaciones y mejorar el ajuste del modelo.
+
+```{r}
+# Crear dataset con transformaciones logarítmicas
+# Agregamos un pequeño valor para evitar log(0)
+modelo_data_log <- data %>%
+  select(LTV, Age, Total_Transactions, Avg_Transaction_Value, 
+         Max_Transaction_Value, Referral_Count) %>%
+  mutate(
+    log_LTV = log(LTV + 1),
+    log_Age = log(Age + 1),
+    log_Total_Transactions = log(Total_Transactions + 1),
+    log_Avg_Transaction_Value = log(Avg_Transaction_Value + 1),
+    log_Max_Transaction_Value = log(Max_Transaction_Value + 1),
+    log_Referral_Count = log(Referral_Count + 1)
+  )
+
+# Dividir en conjunto de entrenamiento y prueba (usando la misma semilla)
+set.seed(123)
+indices_train_log <- sample(1:nrow(modelo_data_log), size = 0.8 * nrow(modelo_data_log))
+train_data_log <- modelo_data_log[indices_train_log, ]
+test_data_log <- modelo_data_log[-indices_train_log, ]
+
+# Crear modelo con variables transformadas
+modelo_lm_log <- lm(log_LTV ~ log_Age + log_Total_Transactions + 
+                      log_Avg_Transaction_Value + log_Max_Transaction_Value + 
+                      log_Referral_Count, 
+                    data = train_data_log)
+
+# Resumen del modelo
+summary(modelo_lm_log)
+```
+
+```{r}
+# Realizar predicciones en escala logarítmica
+predicciones_log <- predict(modelo_lm_log, newdata = test_data_log)
+
+# Convertir predicciones de vuelta a escala original
+predicciones_original <- exp(predicciones_log) - 1
+
+# Calcular métricas de evaluación en escala original
+mse_log <- mean((test_data_log$LTV - predicciones_original)^2)
+rmse_log <- sqrt(mse_log)
+mae_log <- mean(abs(test_data_log$LTV - predicciones_original))
+r2_log <- cor(test_data_log$LTV, predicciones_original)^2
+
+cat("Métricas del modelo con transformación log:\n")
+cat("RMSE:", round(rmse_log, 2), "\n")
+cat("MAE:", round(mae_log, 2), "\n")
+cat("R²:", round(r2_log, 4), "\n")
+```
+
+```{r}
+# Visualizar predicciones vs valores reales (escala original)
+ggplot(data.frame(Real = test_data_log$LTV, Predicho = predicciones_original), 
+       aes(x = Real, y = Predicho)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Valores Reales vs Predicciones (Modelo con Log)",
+       x = "LTV Real",
+       y = "LTV Predicho") +
+  theme_minimal()
+```
+
+
+## Prueba 3 - Regresión con regularización LASSO
+
+La regularización LASSO ayuda a seleccionar variables importantes y prevenir overfitting al penalizar coeficientes.
+
+```{r}
+# Instalar y cargar glmnet si es necesario
+# install.packages("glmnet")
+library(glmnet)
+
+# Preparar matrices para glmnet (requiere matrices, no data frames)
+x_train <- as.matrix(train_data_log %>% 
+                      select(log_Age, log_Total_Transactions, 
+                             log_Avg_Transaction_Value, log_Max_Transaction_Value, 
+                             log_Referral_Count))
+y_train <- train_data_log$log_LTV
+
+x_test <- as.matrix(test_data_log %>% 
+                     select(log_Age, log_Total_Transactions, 
+                            log_Avg_Transaction_Value, log_Max_Transaction_Value, 
+                            log_Referral_Count))
+y_test <- test_data_log$log_LTV
+```
+
+```{r}
+# Validación cruzada para encontrar el mejor lambda
+set.seed(123)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10)
+
+# Visualizar la selección de lambda
+plot(cv_lasso)
+
+# Mejor lambda
+cat("Lambda óptimo (min):", cv_lasso$lambda.min, "\n")
+cat("Lambda 1se:", cv_lasso$lambda.1se, "\n")
+```
+
+```{r}
+# Entrenar modelo LASSO con el lambda óptimo
+modelo_lasso <- glmnet(x_train, y_train, alpha = 1, lambda = cv_lasso$lambda.min)
+
+# Ver coeficientes del modelo
+coef_lasso <- coef(modelo_lasso)
+print("Coeficientes del modelo LASSO:")
+print(coef_lasso)
+```
+
+```{r}
+# Predicciones con LASSO
+predicciones_lasso_log <- predict(modelo_lasso, newx = x_test)
+
+# Convertir a escala original (asegurar que sea un vector)
+predicciones_lasso_original <- as.vector(exp(predicciones_lasso_log) - 1)
+
+# Calcular métricas
+mse_lasso <- mean((test_data_log$LTV - predicciones_lasso_original)^2)
+rmse_lasso <- sqrt(mse_lasso)
+mae_lasso <- mean(abs(test_data_log$LTV - predicciones_lasso_original))
+r2_lasso <- cor(test_data_log$LTV, predicciones_lasso_original)^2
+
+cat("Métricas del modelo LASSO:\n")
+cat("RMSE:", round(rmse_lasso, 2), "\n")
+cat("MAE:", round(mae_lasso, 2), "\n")
+cat("R²:", round(r2_lasso, 4), "\n")
+```
+
+```{r}
+# Visualizar predicciones LASSO vs valores reales
+df_lasso <- data.frame(
+  Real = test_data_log$LTV, 
+  Predicho = predicciones_lasso_original
+)
+
+ggplot(df_lasso, aes(x = Real, y = Predicho)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Valores Reales vs Predicciones (Modelo LASSO)",
+       x = "LTV Real",
+       y = "LTV Predicho") +
+  theme_minimal()
+```
+
+```{r}
+# Comparación de los tres modelos
+comparacion <- data.frame(
+  Modelo = c("Lineal Simple", "Log Transformado", "LASSO"),
+  RMSE = c(rmse, rmse_log, rmse_lasso),
+  MAE = c(mae, mae_log, mae_lasso),
+  R2 = c(r2, r2_log, r2_lasso)
+)
+
+print(comparacion)
+
+# Visualizar comparación
+library(tidyr)
+comparacion_long <- comparacion %>%
+  pivot_longer(cols = c(RMSE, MAE, R2), 
+               names_to = "Metrica", 
+               values_to = "Valor")
+
+ggplot(comparacion_long, aes(x = Modelo, y = Valor, fill = Modelo)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ Metrica, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Comparación de Modelos")
+```
+
+
+## Prueba 4 - XGBoost
+
+XGBoost es un algoritmo de gradient boosting que suele ofrecer mejor rendimiento en problemas de regresión.
+
+```{r}
+# Instalar y cargar xgboost si es necesario
+# install.packages("xgboost")
+library(xgboost)
+
+# Preparar datos en formato DMatrix (formato óptimo para xgboost)
+dtrain <- xgb.DMatrix(data = x_train, label = y_train)
+dtest <- xgb.DMatrix(data = x_test, label = y_test)
+```
+
+```{r}
+# Configurar parámetros de XGBoost
+params <- list(
+  objective = "reg:squarederror",  # Para regresión
+  eta = 0.1,                       # Learning rate
+  max_depth = 6,                   # Profundidad máxima del árbol
+  subsample = 0.8,                 # Proporción de muestras para cada árbol
+  colsample_bytree = 0.8           # Proporción de features para cada árbol
+)
+
+# Validación cruzada para encontrar el número óptimo de árboles
+set.seed(123)
+cv_xgb <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 500,
+  nfold = 5,
+  early_stopping_rounds = 20,
+  verbose = 0,
+  print_every_n = 50
+)
+
+# Mejor número de iteraciones
+best_iteration <- cv_xgb$best_iteration
+cat("Mejor número de iteraciones:", best_iteration, "\n")
+```
+
+```{r}
+# Entrenar modelo XGBoost con el mejor número de iteraciones
+modelo_xgb <- xgb.train(
+  params = params,
+  data = dtrain,
+  nrounds = best_iteration,
+  verbose = 0
+)
+
+# Importancia de variables
+importance_matrix <- xgb.importance(model = modelo_xgb)
+print("Importancia de variables:")
+print(importance_matrix)
+
+
+```
+```{r}
+# Visualizar importancia de variables
+xgb.plot.importance(importance_matrix, top_n = 5)
 ```
 
 
 ```{r}
+# Predicciones con XGBoost
+predicciones_xgb_log <- predict(modelo_xgb, dtest)
 
+# Convertir a escala original
+predicciones_xgb_original <- exp(predicciones_xgb_log) - 1
+
+# Calcular métricas
+mse_xgb <- mean((test_data_log$LTV - predicciones_xgb_original)^2)
+rmse_xgb <- sqrt(mse_xgb)
+mae_xgb <- mean(abs(test_data_log$LTV - predicciones_xgb_original))
+r2_xgb <- cor(test_data_log$LTV, predicciones_xgb_original)^2
+
+cat("Métricas del modelo XGBoost:\n")
+cat("RMSE:", round(rmse_xgb, 2), "\n")
+cat("MAE:", round(mae_xgb, 2), "\n")
+cat("R²:", round(r2_xgb, 4), "\n")
 ```
 
+```{r}
+# Visualizar predicciones XGBoost vs valores reales
+df_xgb <- data.frame(
+  Real = test_data_log$LTV,
+  Predicho = predicciones_xgb_original
+)
+
+ggplot(df_xgb, aes(x = Real, y = Predicho)) +
+  geom_point(alpha = 0.5, color = "darkred") +
+  geom_abline(slope = 1, intercept = 0, color = "blue", linetype = "dashed") +
+  labs(title = "Valores Reales vs Predicciones (XGBoost)",
+       x = "LTV Real",
+       y = "LTV Predicho") +
+  theme_minimal()
+```
+
+```{r}
+# Comparación de todos los modelos
+comparacion_completa <- data.frame(
+  Modelo = c("Lineal Simple", "Log Transformado", "LASSO", "XGBoost"),
+  RMSE = c(rmse, rmse_log, rmse_lasso, rmse_xgb),
+  MAE = c(mae, mae_log, mae_lasso, mae_xgb),
+  R2 = c(r2, r2_log, r2_lasso, r2_xgb)
+)
+
+print(comparacion_completa)
+
+# Visualizar comparación completa
+comparacion_completa_long <- comparacion_completa %>%
+  pivot_longer(cols = c(RMSE, MAE, R2), 
+               names_to = "Metrica", 
+               values_to = "Valor")
+
+
+```
 
 ```{r}
 
 ```
+
+
+
+
 
